@@ -1,0 +1,89 @@
+# Import necessary libraries
+import pandas as pd
+import numpy as np
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestClassifier, IsolationForest
+from sklearn.metrics import classification_report, confusion_matrix, roc_auc_score
+from sklearn.preprocessing import StandardScaler
+from sklearn.utils.class_weight import compute_class_weight
+from imblearn.over_sampling import SMOTE
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+# Load the dataset (Assuming you have a 'credit_card_transactions.csv' file)
+df = pd.read_csv('credit_card_transactions.csv')
+
+# Display the first few rows of the dataset
+print(df.head())
+
+# Feature Engineering
+# Assuming the dataset has columns like: 'TransactionID', 'Time', 'Amount', 'MerchantID', 'Location', 'Label'
+# 'Label' is the target variable where 1 is fraudulent and 0 is legitimate.
+
+# Split into features and target
+X = df.drop(['TransactionID', 'Label'], axis=1)  # Exclude 'TransactionID' and 'Label' from features
+y = df['Label']  # Target variable
+
+# Handle class imbalance with SMOTE (Synthetic Minority Over-sampling Technique)
+smote = SMOTE(random_state=42)
+X_resampled, y_resampled = smote.fit_resample(X, y)
+
+# Feature Scaling: Normalize the continuous features (e.g., 'Amount', 'Time')
+scaler = StandardScaler()
+X_resampled[['Amount', 'Time']] = scaler.fit_transform(X_resampled[['Amount', 'Time']])
+
+# Split the dataset into training and testing sets
+X_train, X_test, y_train, y_test = train_test_split(X_resampled, y_resampled, test_size=0.3, stratify=y_resampled, random_state=42)
+
+# -----------------------------------------------------------------------------------------------------------------
+# Model 1: Random Forest Classifier (Supervised Learning)
+# -----------------------------------------------------------------------------------------------------------------
+
+# Handle class imbalance by using class weights
+class_weights = compute_class_weight('balanced', classes=np.unique(y_train), y=y_train)
+class_weight_dict = {i: class_weights[i] for i in range(len(class_weights))}
+
+# Initialize and train the Random Forest Classifier with class weights
+rf_model = RandomForestClassifier(n_estimators=100, class_weight=class_weight_dict, random_state=42)
+rf_model.fit(X_train, y_train)
+
+# Make predictions on the test set
+y_pred_rf = rf_model.predict(X_test)
+
+# Evaluate the Random Forest Model
+print("Random Forest Model Evaluation")
+print(f"ROC-AUC: {roc_auc_score(y_test, y_pred_rf)}")
+print(classification_report(y_test, y_pred_rf))
+sns.heatmap(confusion_matrix(y_test, y_pred_rf), annot=True, fmt='d', cmap='Blues')
+plt.title("Random Forest Confusion Matrix")
+plt.show()
+
+# -----------------------------------------------------------------------------------------------------------------
+# Model 2: Isolation Forest (Anomaly Detection)
+# -----------------------------------------------------------------------------------------------------------------
+
+# Initialize and train the Isolation Forest model
+iso_forest = IsolationForest(n_estimators=100, contamination=0.01, random_state=42)
+y_pred_if = iso_forest.fit_predict(X_test)
+
+# Convert Isolation Forest predictions (1: normal, -1: anomaly) to fraud (1) / non-fraud (0)
+y_pred_if = np.where(y_pred_if == -1, 1, 0)
+
+# Evaluate the Isolation Forest Model
+print("Isolation Forest Model Evaluation")
+print(f"ROC-AUC: {roc_auc_score(y_test, y_pred_if)}")
+print(classification_report(y_test, y_pred_if))
+sns.heatmap(confusion_matrix(y_test, y_pred_if), annot=True, fmt='d', cmap='Blues')
+plt.title("Isolation Forest Confusion Matrix")
+plt.show()
+
+# -----------------------------------------------------------------------------------------------------------------
+# Model Comparison
+# -----------------------------------------------------------------------------------------------------------------
+
+# Compare the two models' ROC-AUC scores
+rf_auc = roc_auc_score(y_test, y_pred_rf)
+if_auc = roc_auc_score(y_test, y_pred_if)
+
+print(f"Random Forest ROC-AUC: {rf_auc}")
+print(f"Isolation Forest ROC-AUC: {if_auc}")
